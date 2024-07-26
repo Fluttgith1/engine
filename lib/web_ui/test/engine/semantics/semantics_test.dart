@@ -752,7 +752,7 @@ void _testHeader() {
 
     owner().updateSemantics(builder.build());
     expectSemanticsTree(owner(), '''
-<sem role="heading">Header of the page</sem>
+<sem role="banner">Header of the page</sem>
 ''');
 
     semantics().semanticsEnabled = false;
