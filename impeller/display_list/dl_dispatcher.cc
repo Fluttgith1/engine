@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "display_list/dl_sampling_options.h"
+#include "display_list/effects/dl_image_filter.h"
 #include "flutter/fml/logging.h"
 #include "flutter/fml/trace_event.h"
 #include "impeller/aiks/color_filter.h"
@@ -672,6 +674,42 @@ static std::shared_ptr<ImageFilter> ToImageFilter(
       auto matrix = ToMatrix(local_matrix_filter->matrix());
       return ImageFilter::MakeLocalMatrix(matrix, *image_filter);
     }
+    case flutter::DlImageFilterType::kRuntimeEffect:
+      auto fragment_program_filter = filter->asRuntimeEffectFilter();
+      FML_DCHECK(fragment_program_filter);
+      const flutter::DlRuntimeEffectImageFilter* runtime_filter =
+          fragment_program_filter->asRuntimeEffectFilter();
+      auto runtime_stage = runtime_filter->runtime_effect()->runtime_stage();
+      const auto& uniform_data = runtime_filter->uniform_data();
+      const auto& samplers = runtime_filter->samplers();
+
+      std::vector<RuntimeEffectContents::TextureInput> texture_inputs;
+      size_t index = 0;
+      for (auto& sampler : samplers) {
+        if (index == 0 && sampler == nullptr) {
+          // Insert placeholder for filter.
+          texture_inputs.push_back({.sampler_descriptor = ToSamplerDescriptor(
+                                        flutter::DlFilterMode::kNearest),
+                                    .texture = nullptr});
+          continue;
+        }
+        if (sampler == nullptr) {
+          return nullptr;
+        }
+        auto* image = sampler->asImage();
+        if (!sampler->asImage()) {
+          UNIMPLEMENTED;
+          return nullptr;
+        }
+        FML_DCHECK(image->image()->impeller_texture());
+        index++;
+        texture_inputs.push_back({
+            .sampler_descriptor = ToSamplerDescriptor(image->sampling()),
+            .texture = image->image()->impeller_texture(),
+        });
+      }
+      return ImageFilter::MakeRuntimeEffect(runtime_stage, uniform_data,
+                                            texture_inputs);
   }
 }
 
