@@ -46,17 +46,8 @@ void CanvasGradient::initLinear(const tonic::Float32List& end_points,
 
   SkPoint p0 = SkPoint::Make(end_points[0], end_points[1]);
   SkPoint p1 = SkPoint::Make(end_points[2], end_points[3]);
-  std::vector<DlColor> dl_colors;
-  dl_colors.reserve(num_colors);
-  for (int i = 0; i < colors.num_elements(); i += 4) {
-    DlScalar a = colors[i + 0];
-    DlScalar r = colors[i + 1];
-    DlScalar g = colors[i + 2];
-    DlScalar b = colors[i + 3];
-    dl_colors.emplace_back(DlColor(a, r, g, b, DlColorSpace::kExtendedSRGB));
-  }
 
-  dl_shader_ = DlColorSource::MakeLinear(p0, p1, num_colors, dl_colors.data(),
+  dl_shader_ = DlColorSource::MakeLinear(p0, p1, num_colors, colors.data(),
                                          color_stops.data(), tile_mode,
                                          has_matrix ? &sk_matrix : nullptr);
   // Just a sanity check, all gradient shaders should be thread-safe
@@ -83,6 +74,8 @@ void CanvasGradient::initRadial(double center_x,
     sk_matrix = ToSkMatrix(matrix4);
   }
 
+  // TODO(https://github.com/flutter/flutter/issues/154650): Eliminate this
+  // heap allocation.
   std::vector<DlColor> dl_colors;
   dl_colors.reserve(num_colors);
   for (int i = 0; i < colors.num_elements(); i += 4) {
@@ -122,6 +115,8 @@ void CanvasGradient::initSweep(double center_x,
     sk_matrix = ToSkMatrix(matrix4);
   }
 
+  // TODO(https://github.com/flutter/flutter/issues/154650): Eliminate this
+  // heap allocation.
   std::vector<DlColor> dl_colors;
   dl_colors.reserve(num_colors);
   for (int i = 0; i < colors.num_elements(); i += 4) {
@@ -165,6 +160,8 @@ void CanvasGradient::initTwoPointConical(double start_x,
     sk_matrix = ToSkMatrix(matrix4);
   }
 
+  // TODO(https://github.com/flutter/flutter/issues/154650): Eliminate this
+  // heap allocation.
   std::vector<DlColor> dl_colors;
   dl_colors.reserve(num_colors);
   for (int i = 0; i < colors.num_elements(); i += 4) {
