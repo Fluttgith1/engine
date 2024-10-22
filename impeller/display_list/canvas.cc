@@ -1071,15 +1071,16 @@ void Canvas::SaveLayer(const Paint& paint,
   Point local_position = Point(0, 0);
   if (backdrop_filter) {
     local_position = subpass_coverage.GetOrigin() - GetGlobalPassPosition();
-    Canvas::BackdropFilterProc backdrop_filter_proc =
-        [backdrop_filter = backdrop_filter](
-            const FilterInput::Ref& input, const Matrix& effect_transform,
-            Entity::RenderingMode rendering_mode) {
-          auto filter = WrapInput(backdrop_filter, input);
-          filter->SetEffectTransform(effect_transform);
-          filter->SetRenderingMode(rendering_mode);
-          return filter;
-        };
+    auto backdrop_filter_proc =
+        [](const flutter::DlImageFilter* backdrop_filter,
+           const FilterInput::Ref& input, const Matrix& effect_transform,
+           Entity::RenderingMode rendering_mode)
+        -> std::shared_ptr<FilterContents> {
+      auto filter = WrapInput(backdrop_filter, input);
+      filter->SetEffectTransform(effect_transform);
+      filter->SetRenderingMode(rendering_mode);
+      return filter;
+    };
 
     std::shared_ptr<Texture> input_texture;
 
@@ -1118,24 +1119,37 @@ void Canvas::SaveLayer(const Paint& paint,
       input_texture = backdrop_data->texture_slot;
     }
 
-    backdrop_filter_contents = backdrop_filter_proc(
-        FilterInput::Make(std::move(input_texture)),
-        transform_stack_.back().transform.Basis(),
-        // When the subpass has a translation that means the math with
-        // the snapshot has to be different.
-        transform_stack_.back().transform.HasTranslation()
-            ? Entity::RenderingMode::kSubpassPrependSnapshotTransform
-            : Entity::RenderingMode::kSubpassAppendSnapshotTransform);
-
     if (will_cache_backdrop_texture) {
       FML_DCHECK(backdrop_data);
       // If all filters on the shared backdrop layer are equal, process the
       // layer once.
       if (backdrop_data->all_filters_equal &&
           !backdrop_data->shared_filter_snapshot.has_value()) {
-        // TODO(157110): compute minimum input hint.
+        Entity snapshot_entity;
+        std::optional<Rect> coverage_limit;
+        for (const std::shared_ptr<flutter::DlImageFilter>& dl_filter :
+             backdrop_data->backdrops) {
+          backdrop_filter_contents = backdrop_filter_proc(
+              dl_filter.get(), FilterInput::Make(input_texture),
+              transform_stack_.back().transform.Basis(),
+              // When the subpass has a translation that means the math with
+              // the snapshot has to be different.
+              transform_stack_.back().transform.HasTranslation()
+                  ? Entity::RenderingMode::kSubpassPrependSnapshotTransform
+                  : Entity::RenderingMode::kSubpassAppendSnapshotTransform);
+          std::optional<Rect> coverage =
+              backdrop_filter_contents->GetCoverage(snapshot_entity);
+          if (coverage.has_value()) {
+            if (coverage_limit.has_value()) {
+              coverage_limit = coverage_limit->Union(coverage.value());
+            } else {
+              coverage_limit = coverage;
+            }
+          }
+        }
         backdrop_data->shared_filter_snapshot =
-            backdrop_filter_contents->RenderToSnapshot(renderer_, {});
+            backdrop_filter_contents->RenderToSnapshot(
+                renderer_, snapshot_entity, coverage_limit);
       }
 
       std::optional<Snapshot> maybe_snapshot =
@@ -1161,6 +1175,17 @@ void Canvas::SaveLayer(const Paint& paint,
         Save(0);
         return;
       }
+    }
+
+    if (!backdrop_filter_contents) {
+      backdrop_filter_contents = backdrop_filter_proc(
+          backdrop_filter, FilterInput::Make(std::move(input_texture)),
+          transform_stack_.back().transform.Basis(),
+          // When the subpass has a translation that means the math with
+          // the snapshot has to be different.
+          transform_stack_.back().transform.HasTranslation()
+              ? Entity::RenderingMode::kSubpassPrependSnapshotTransform
+              : Entity::RenderingMode::kSubpassAppendSnapshotTransform);
     }
   }
 
